@@ -4,9 +4,19 @@ query listEnvironments {
   }
 }
 
-query gymStatus {
-  gymStatus {
+query simStatus {
+  simStatus {
     id
+    errors
+  }
+}
+
+query observe {
+  observe {
+    simStatus {
+      id
+      errors
+    }
   }
 }
 
@@ -22,5 +32,6 @@ mutation run {
     }
   ) {
     id
+    errors
   }
 }

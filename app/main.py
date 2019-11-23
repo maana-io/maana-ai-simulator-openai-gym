@@ -11,8 +11,9 @@ mutation = MutationType()
 # Wrapping string in gql function provides validation and better error traceback
 type_defs = gql("""
     
-    type GymStatus {
+    type SimStatus {
         id: ID!
+        errors: [String!]!
     }
     
     input ConfigInput {
@@ -24,13 +25,18 @@ type_defs = gql("""
         id: ID!
     }
 
+    type Observation {
+        simStatus: SimStatus!
+    }
+    
     type Query {
-        gymStatus: GymStatus!
         listEnvironments: [Environment!]!
+        simStatus: SimStatus!
+        observe: Observation!
         test: String!
     }
     type Mutation {
-        run(config: ConfigInput!): GymStatus!
+        run(config: ConfigInput!): SimStatus!
     }
 """)
 
@@ -43,9 +49,14 @@ def resolve_listEnvironments(*_):
     return res
 
 
-@query.field("gymStatus")
-def resolve_gymStatus(*_):
-    return app.state["gymStatus"]
+@query.field("simStatus")
+def resolve_simStatus(*_):
+    return app.state["simStatus"]
+
+
+@query.field("observe")
+def resolve_observe(*_):
+    return {"simStatus": app.state["simStatus"]}
 
 
 @query.field("test")
@@ -72,9 +83,9 @@ def resolve_run(*_, config):
     client = GraphQLClient(config["uri"])
     client.inject_token("Bearer " + config["token"])
     app.state["client"] = client
-    app.state["gymStatus"] = {"id": "running"}
+    app.state["simStatus"] = {"id": "running", "errors": []}
 
-    return app.state["gymStatus"]
+    return app.state["simStatus"]
 
 
 # Create executable GraphQL schema
@@ -84,4 +95,4 @@ schema = make_executable_schema(type_defs, [query, mutation])
 app = GraphQL(schema, debug=True)
 
 # Create shared state on the app object
-app.state = {"client": None, "gymStatus": {"id": "idle"}}
+app.state = {"client": None, "simStatus": {"id": "idle", "errors": []}}
