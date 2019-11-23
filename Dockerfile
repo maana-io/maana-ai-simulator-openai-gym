@@ -70,6 +70,6 @@ RUN apk add --no-cache \
   \
   apk del .build-dependencies
 
-RUN pip install ariadne gym graphqlclient
+RUN pip install ariadne graphqlclient gym gym-retro
 
 COPY ./app /app

@@ -27,11 +27,14 @@ query test {
 mutation run {
   run(
     config: {
-      uri: "https://lastknowngood.knowledge.maana.io:8443/service/b00a2def-69a1-4238-80f7-c7920aa0afd4/graphql"
+      environment: "Taxi-v3"
+      mode: Training
+      agentUri: "https://lastknowngood.knowledge.maana.io:8443/service/b00a2def-69a1-4238-80f7-c7920aa0afd4/graphql"
       token: "<secret>"
     }
   ) {
     id
+    code
     errors
   }
 }
