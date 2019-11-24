@@ -15,42 +15,34 @@ import retro
 
 # --- Constants
 
-ID = "id"
-
-CLIENT = "client"
-CONFIG = "config"
-THREAD = "thread"
-ENVIRONMENT = "environment"
-OBSERVATION = "observation"
-EPISODE = "episode"
-STEP = "step"
 ACTION = "action"
-REWARD = "reward"
-STATUS = "status"
-CONTEXT = "context"
-REWARD = "reward"
-
-DATA = "data"
-SIM_STATUS = "simStatus"
-
-MODE = "mode"
 AGENT_URI = "agentUri"
-TOKEN = "token"
-ENVIRONMENT = "environment"
-
+CLIENT = "client"
 CODE = "code"
-ERRORS = "errors"
-MESSAGE = "message"
-
-TRAINING = "Training"
-PERFORMING = "Performing"
-
-IDLE = "Idle"
-STARTING = "Starting"
-RUNNING = "Running"
-STOPPED = "Stopped"
+CONFIG = "config"
+CONTEXT = "context"
+DATA = "data"
 ENDED = "Ended"
+ENVIRONMENT = "environment"
+EPISODE = "episode"
 ERROR = "Error"
+ERRORS = "errors"
+ID = "id"
+IDLE = "Idle"
+MESSAGE = "message"
+MODE = "mode"
+OBSERVATION = "observation"
+PERFORMING = "Performing"
+REWARD = "reward"
+RUNNING = "Running"
+SIM_STATUS = "simStatus"
+STARTING = "Starting"
+STATUS = "status"
+STEP = "step"
+STOPPED = "Stopped"
+THREAD = "thread"
+TOKEN = "token"
+TRAINING = "Training"
 
 # --- Simulation
 
