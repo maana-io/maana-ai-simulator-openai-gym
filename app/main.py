@@ -1,4 +1,5 @@
 # --- External imports
+import json
 import time
 import threading
 import numpy as np
@@ -69,8 +70,6 @@ def create_state():
         STATE_EPISODE: 0,
         STATE_STEP: 0,
         STATE_OBSERVATION: (0,),
-        STATE_ACTION: (0,),
-        STATE_REWARD: 0,
         STATE_STATUS: None
     }
     app.state = state
@@ -79,14 +78,21 @@ def create_state():
     return state
 
 
-def execute_client_request(graphql):
+def execute_client_request(graphql, variables=None):
     try:
         client = app.state[STATE_CLIENT]
         if (client == None):
             raise Exception("No client.  Running?")
-        result = client.execute(graphql)
+        result = client.execute(graphql, variables)
         print("result: " + result)
-        return result
+        json_result = json.loads(result)
+        if ("errors" in json_result):
+            errors = json_result["errors"]
+            if (errors != None):
+                error_messages = [e["message"] for e in errors]
+                set_sim_status(CODE_ERROR, error_messages)
+                return None
+        return json_result["data"]
     except Exception as e:
         print("exception: " + repr(e))
         set_sim_status(CODE_ERROR, [str(e)])
@@ -95,37 +101,27 @@ def execute_client_request(graphql):
 
 def agent_on_reset():
     result = execute_client_request('''
-        {
-            allSimulators {
-                id
-            }
-        }
+    {
+        onReset
+    }
     ''')
-    print("agent_on_reset: " + str(result))
+    # print("agent_on_reset: " + str(result))
     return str(result)
 
 
-def agent_on_step(ob, reward):
+def agent_on_step(state, last_reward, last_action, done, context):
     result = execute_client_request('''
-        {
-            allSimulators {
+        mutation onStep($state: [Float!]!, $lastReward: Float!, $lastAction: Int!, $isDone: Boolean!, $context: String) {
+            onStep(state: $state, lastReward: $lastReward, lastAction: $lastAction, isDone: $isDone, context: $context) {
                 id
+                action
+                context
             }
         }
-    ''')
-    print("agent_on_step: " + str(result))
-    return str(result)
-
-
-def agent_on_end():
-    result = execute_client_request('''
-        {
-            allSimulators {
-                id
-            }
-        }
-    ''')
-    print("agent_on_end: " + str(result))
+    ''', {
+        "state": state, "lastReward": last_reward, "lastAction": last_action, "isDone": done, "context": context
+    })
+    # print("agent_on_step: " + str(result))
     return str(result)
 
 # --- OpenAI Gym
@@ -142,13 +138,10 @@ def try_make_env(environmentId):
 def run_episodes(episode_count):
     print("run_episodes:" + str(episode_count))
     app.state[STATE_EPISODE] = 0
-    app.state[STATE_ACTION] = (0,)
-    app.state[STATE_REWARD] = 0
 
     set_sim_status(CODE_RUNNING)
 
     env = app.state[STATE_ENVIRONMENT]
-    client = app.state[STATE_CLIENT]
 
     for i in range(episode_count):
         if (app.state[STATE_STATUS][STATUS_CODE] != CODE_RUNNING):
@@ -156,48 +149,47 @@ def run_episodes(episode_count):
 
         app.state[STATE_EPISODE] = i
 
-        reward = 0
+        done = False
+        last_reward = 0
+        last_action = 0
+
         ob = env.reset()
         print("episode #" + str(i) + ": " + repr(ob))
 
-        reset_result = agent_on_reset()
-        print("- reset_result: " + repr(reset_result))
+        agent_context = agent_on_reset()
 
         step = 0
         while app.state[STATE_STATUS][STATUS_CODE] == CODE_RUNNING:
             app.state[STATE_STEP] = step
             step += 1
 
-            data = ob
+            state = ob
             if (isinstance(ob, np.ndarray)):
-                data = ob.tolist()
+                state = ob.tolist()
+            elif (isinstance(ob, np.int64) or isinstance(ob, int)):
+                state = (float(ob),)
             else:
-                print("type of ob: " + repr(type(ob)))
+                print("type of state`: " + repr(type(state)))
 
-            app.state[STATE_OBSERVATION] = data
+            app.state[STATE_OBSERVATION] = state
 
-            status = app.state[STATE_STATUS]
-            print('- status: ' + repr(status))
+            on_step_result = agent_on_step(
+                state, last_reward, last_action, done, agent_context)
 
-            on_step_result = agent_on_step(ob, reward)
-            print("- on_step_result: " + repr(on_step_result))
+            if (app.state[STATE_STATUS][STATUS_CODE] == CODE_ERROR):
+                break
 
-            action = env.action_space.sample()  # agent.act(ob, reward, done)
-            print("-- action: " + repr(action))
-            print("type of action: " + repr(type(action)))
-            act = action
-            if (type(action) is int):
-                act = (action,)
-            app.state[STATE_ACTION] = act
+            last_action = env.action_space.sample()
 
-            ob, reward, done, _ = env.step(action)
+            ob, last_reward, done, _ = env.step(last_action)
             if done:
+                agent_on_step(ob, last_reward, last_action,
+                              done, agent_context)
                 print("- DONE!")
                 break
 
             print("- step = " + str(step) + ", reward = " +
-                  str(reward) + ", ob = " + repr(ob))
-            app.state[STATE_REWARD] = reward
+                  str(last_reward) + ", ob = " + repr(ob))
 
             # Note there's no env.render() here. But the environment still can open window and
             # render if asked by env.monitor: it calls env.render('rgb_array') to record video.
@@ -260,8 +252,6 @@ type_defs = gql("""
         episode: Int!
         step: Int!
         data: [Float!]!
-        action: [Float!]!
-        reward: Float!
         simStatus: SimStatus!
     }
 
@@ -296,8 +286,6 @@ def resolve_observe(*_):
     observation = {
         "episode": app.state[STATE_EPISODE],
         "step": app.state[STATE_STEP],
-        "action": app.state[STATE_ACTION],
-        "reward": app.state[STATE_REWARD],
         "data": app.state[STATE_OBSERVATION],
         "simStatus": app.state[STATE_STATUS]
     }
