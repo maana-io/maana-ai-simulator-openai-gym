@@ -180,6 +180,7 @@ def run_episodes(episode_count):
     try:
         print("run_episodes:" + str(episode_count))
         app.state[EPISODE] = 0
+        app.state[REWARD] = 0
 
         set_sim_status(RUNNING)
 
