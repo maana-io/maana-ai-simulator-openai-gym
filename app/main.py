@@ -1,4 +1,5 @@
 # --- External imports
+from asgi_lifespan import Lifespan, LifespanMiddleware
 import json
 import time
 import threading
@@ -49,15 +50,11 @@ CODE_ERROR = "Error"
 
 
 def set_sim_status(code, errors=[]):
-    status = app.state[STATE_STATUS]
-    print('set_sim_status before: ' + repr(status))
     ts = time.time()
     app.state[STATE_STATUS] = {
         ID: "gym@" + str(ts),
         STATUS_CODE: code,
         STATUS_ERRORS: errors}
-    status = app.state[STATE_STATUS]
-    print('set_sim_status after: ' + repr(status))
     return app.state[STATE_STATUS]
 
 
@@ -74,7 +71,6 @@ def create_state():
     }
     app.state = state
     set_sim_status(CODE_IDLE)
-    print("**** new state created ****")
     return state
 
 
@@ -124,8 +120,44 @@ def agent_on_step(state, last_reward, last_action, done, context):
     # print("agent_on_step: " + str(result))
     return str(result)
 
-# --- OpenAI Gym
 
+def run_simulation(config):
+    set_sim_status(CODE_STARTING)
+    env = try_make_env(config[STATE_ENVIRONMENT])
+    if (env == None):
+        set_sim_status(
+            CODE_ERROR, ["Can't load environment: " + config[CONFIG_ENVIRONMENT]])
+        return app.state[STATE_STATUS]
+    app.state[STATE_ENVIRONMENT] = env
+
+    client = GraphQLClient(config[CONFIG_AGENT_URI])
+    client.inject_token("Bearer " + config[CONFIG_TOKEN])
+    app.state[STATE_CLIENT] = client
+
+    thread = threading.Thread(target=run_episodes, args=(99,))
+    print("thread: " + repr(thread))
+    app.state[STATE_THREAD] = thread
+    thread.start()
+
+    return app.state[STATE_STATUS]
+
+
+def stop_simulation():
+    set_sim_status(CODE_STOPPED)
+
+    # Close the env and write monitor result info to disk
+    env = app.state[STATE_ENVIRONMENT]
+    if (env != None):
+        env.close()
+
+    thread = app.state[STATE_THREAD]
+    if (thread != None):
+        thread.join()
+
+    return app.state[STATE_STATUS]
+
+
+# --- OpenAI Gym
 
 def try_make_env(environmentId):
     try:
@@ -308,38 +340,12 @@ def resolve_test(*_):
 
 @mutation.field("stop")
 def resolve_stop(*_):
-    set_sim_status(CODE_STOPPED)
-
-    # Close the env and write monitor result info to disk
-    env = app.state[STATE_ENVIRONMENT]
-    if (env != None):
-        env.close()
-
-    client = app.state[STATE_CLIENT]
-
-    return app.state[STATE_STATUS]
+    return stop_simulation()
 
 
 @mutation.field("run")
 def resolve_run(*_, config):
-    set_sim_status(CODE_STARTING)
-    env = try_make_env(config[STATE_ENVIRONMENT])
-    if (env == None):
-        set_sim_status(
-            CODE_ERROR, ["Can't load environment: " + config[CONFIG_ENVIRONMENT]])
-        return app.state[STATE_STATUS]
-    app.state[STATE_ENVIRONMENT] = env
-
-    client = GraphQLClient(config[CONFIG_AGENT_URI])
-    client.inject_token("Bearer " + config[CONFIG_TOKEN])
-    app.state[STATE_CLIENT] = client
-
-    thread = threading.Thread(target=run_episodes, args=(99,))
-    print("thread: " + repr(thread))
-    app.state[STATE_THREAD] = thread
-    thread.start()
-
-    return app.state[STATE_STATUS]
+    return run_simulation(config)
 
 
 # Create executable GraphQL schema
@@ -347,8 +353,31 @@ schema = make_executable_schema(type_defs, [query, mutation])
 
 # --- ASGI app
 
+# 'Lifespan' is a standalone ASGI app.
+# It implements the lifespan protocol,
+# and allows registering lifespan event handlers.
+lifespan = Lifespan()
+
+
+@lifespan.on_event("startup")
+async def startup():
+    print("Starting up...")
+    print("... done!")
+
+
+@lifespan.on_event("shutdown")
+async def shutdown():
+    print("Shutting down...")
+    stop_simulation()
+    print("... done!")
+
 # Create an ASGI app using the schema, running in debug mode
 app = GraphQL(schema, debug=True)
+
+# 'LifespanMiddleware' returns an ASGI app.
+# It forwards lifespan requests to 'lifespan',
+# and anything else goes to 'app'.
+app = LifespanMiddleware(app, lifespan=lifespan)
 
 # Create shared state on the app object
 create_state()
