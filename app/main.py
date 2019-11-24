@@ -17,81 +17,88 @@ import retro
 
 ID = "id"
 
-STATE_CLIENT = "client"
-STATE_CONFIG = "config"
-STATE_THREAD = "thread"
-STATE_ENVIRONMENT = "environment"
-STATE_OBSERVATION = "observation"
-STATE_EPISODE = "episode"
-STATE_STEP = "step"
-STATE_ACTION = "action"
-STATE_REWARD = "reward"
-STATE_STATUS = "status"
+CLIENT = "client"
+CONFIG = "config"
+THREAD = "thread"
+ENVIRONMENT = "environment"
+OBSERVATION = "observation"
+EPISODE = "episode"
+STEP = "step"
+ACTION = "action"
+REWARD = "reward"
+STATUS = "status"
+CONTEXT = "context"
+REWARD = "reward"
 
-CONFIG_MODE = "mode"
-CONFIG_AGENT_URI = "agentUri"
-CONFIG_TOKEN = "token"
-CONFIG_ENVIRONMENT = "environment"
+DATA = "data"
+SIM_STATUS = "simStatus"
 
-STATUS_CODE = "code"
-STATUS_ERRORS = "errors"
+MODE = "mode"
+AGENT_URI = "agentUri"
+TOKEN = "token"
+ENVIRONMENT = "environment"
 
-MODE_TRAINING = "Training"
-MODE_PERFORMING = "Performing"
+CODE = "code"
+ERRORS = "errors"
+MESSAGE = "message"
 
-CODE_IDLE = "Idle"
-CODE_STARTING = "Starting"
-CODE_RUNNING = "Running"
-CODE_STOPPED = "Stopped"
-CODE_ENDED = "Ended"
-CODE_ERROR = "Error"
+TRAINING = "Training"
+PERFORMING = "Performing"
+
+IDLE = "Idle"
+STARTING = "Starting"
+RUNNING = "Running"
+STOPPED = "Stopped"
+ENDED = "Ended"
+ERROR = "Error"
 
 # --- Simulation
 
 
 def set_sim_status(code, errors=[]):
     ts = time.time()
-    app.state[STATE_STATUS] = {
+    app.state[STATUS] = {
         ID: "gym@" + str(ts),
-        STATUS_CODE: code,
-        STATUS_ERRORS: errors}
-    return app.state[STATE_STATUS]
+        CODE: code,
+        ERRORS: errors}
+    return app.state[STATUS]
 
 
 def create_state():
     state = {
-        STATE_CLIENT: None,
-        STATE_CONFIG: None,
-        STATE_THREAD: None,
-        STATE_ENVIRONMENT: None,
-        STATE_EPISODE: 0,
-        STATE_STEP: 0,
-        STATE_OBSERVATION: (0,),
-        STATE_STATUS: None
+        CLIENT: None,
+        CONFIG: None,
+        THREAD: None,
+        ENVIRONMENT: None,
+        EPISODE: 0,
+        STEP: 0,
+        OBSERVATION: (0,),
+        REWARD: 0,
+        STATUS: None
     }
     app.state = state
-    set_sim_status(CODE_IDLE)
+    set_sim_status(IDLE)
     return state
 
 
 def execute_client_request(graphql, variables=None):
     try:
-        client = app.state[STATE_CLIENT]
+        client = app.state[CLIENT]
         if (client == None):
             raise Exception("No client.  Running?")
         result = client.execute(graphql, variables)
-        print("result: " + result)
+        # print("result: " + result)
         json_result = json.loads(result)
-        if ("errors" in json_result):
-            errors = json_result["errors"]
+        if (ERRORS in json_result):
+            errors = json_result[ERRORS]
             if (errors != None):
-                error_messages = [e["message"] for e in errors]
-                set_sim_status(CODE_ERROR, error_messages)
+                error_messages = [e[MESSAGE] for e in errors]
+                set_sim_status(ERROR, error_messages)
                 return None
-        return json_result["data"]
+        return json_result[DATA]
     except Exception as e:
         print("exception: " + repr(e))
-        set_sim_status(CODE_ERROR, [str(e)])
+        set_sim_status(ERROR, [str(e)])
         return None
 
 
@@ -101,8 +108,9 @@ def agent_on_reset():
         onReset
     }
     ''')
-    # print("agent_on_reset: " + str(result))
-    return str(result)
+    if (result == None):
+        return None
+    return result["onReset"]
 
 
 def agent_on_step(state, last_reward, last_action, done, context):
@@ -117,44 +125,45 @@ def agent_on_step(state, last_reward, last_action, done, context):
     ''', {
         "state": state, "lastReward": last_reward, "lastAction": last_action, "isDone": done, "context": context
     })
-    # print("agent_on_step: " + str(result))
-    return str(result)
+    if (result == None):
+        return None
+    return result["onStep"]
 
 
 def run_simulation(config):
-    set_sim_status(CODE_STARTING)
-    env = try_make_env(config[STATE_ENVIRONMENT])
+    set_sim_status(STARTING)
+    env = try_make_env(config[ENVIRONMENT])
     if (env == None):
         set_sim_status(
-            CODE_ERROR, ["Can't load environment: " + config[CONFIG_ENVIRONMENT]])
-        return app.state[STATE_STATUS]
-    app.state[STATE_ENVIRONMENT] = env
+            ERROR, ["Can't load environment: " + config[ENVIRONMENT]])
+        return app.state[STATUS]
+    app.state[ENVIRONMENT] = env
 
-    client = GraphQLClient(config[CONFIG_AGENT_URI])
-    client.inject_token("Bearer " + config[CONFIG_TOKEN])
-    app.state[STATE_CLIENT] = client
+    client = GraphQLClient(config[AGENT_URI])
+    client.inject_token("Bearer " + config[TOKEN])
+    app.state[CLIENT] = client
 
     thread = threading.Thread(target=run_episodes, args=(99,))
     print("thread: " + repr(thread))
-    app.state[STATE_THREAD] = thread
+    app.state[THREAD] = thread
     thread.start()
 
-    return app.state[STATE_STATUS]
+    return app.state[STATUS]
 
 
 def stop_simulation():
-    set_sim_status(CODE_STOPPED)
+    set_sim_status(STOPPED)
 
     # Close the env and write monitor result info to disk
-    env = app.state[STATE_ENVIRONMENT]
+    env = app.state[ENVIRONMENT]
     if (env != None):
         env.close()
 
-    thread = app.state[STATE_THREAD]
+    thread = app.state[THREAD]
     if (thread != None):
         thread.join()
 
-    return app.state[STATE_STATUS]
+    return app.state[STATUS]
 
 
 # --- OpenAI Gym
@@ -168,74 +177,87 @@ def try_make_env(environmentId):
 
 
 def run_episodes(episode_count):
-    print("run_episodes:" + str(episode_count))
-    app.state[STATE_EPISODE] = 0
+    try:
+        print("run_episodes:" + str(episode_count))
+        app.state[EPISODE] = 0
 
-    set_sim_status(CODE_RUNNING)
+        set_sim_status(RUNNING)
 
-    env = app.state[STATE_ENVIRONMENT]
+        env = app.state[ENVIRONMENT]
 
-    for i in range(episode_count):
-        if (app.state[STATE_STATUS][STATUS_CODE] != CODE_RUNNING):
-            break
-
-        app.state[STATE_EPISODE] = i
-
-        done = False
-        last_reward = 0
-        last_action = 0
-
-        ob = env.reset()
-        print("episode #" + str(i) + ": " + repr(ob))
-
-        agent_context = agent_on_reset()
-
-        step = 0
-        while app.state[STATE_STATUS][STATUS_CODE] == CODE_RUNNING:
-            app.state[STATE_STEP] = step
-            step += 1
-
-            state = ob
-            if (isinstance(ob, np.ndarray)):
-                state = ob.tolist()
-            elif (isinstance(ob, np.int64) or isinstance(ob, int)):
-                state = (float(ob),)
-            else:
-                print("type of state`: " + repr(type(state)))
-
-            app.state[STATE_OBSERVATION] = state
-
-            on_step_result = agent_on_step(
-                state, last_reward, last_action, done, agent_context)
-
-            if (app.state[STATE_STATUS][STATUS_CODE] == CODE_ERROR):
+        for i in range(episode_count):
+            if (app.state[STATUS][CODE] != RUNNING):
                 break
 
-            last_action = env.action_space.sample()
+            app.state[EPISODE] = i
 
-            ob, last_reward, done, _ = env.step(last_action)
-            if done:
-                agent_on_step(ob, last_reward, last_action,
-                              done, agent_context)
-                print("- DONE!")
-                break
+            done = False
+            last_reward = 0
+            last_action = 0
 
-            print("- step = " + str(step) + ", reward = " +
-                  str(last_reward) + ", ob = " + repr(ob))
+            ob = env.reset()
+            print("episode #" + str(i) + ": " + repr(ob))
 
-            # Note there's no env.render() here. But the environment still can open window and
-            # render if asked by env.monitor: it calls env.render('rgb_array') to record video.
-            # Video is not recorded every episode, see capped_cubic_video_schedule for details.
+            agent_context = agent_on_reset()
 
-            # render = env.render('rgb_array')
-            # print("- render " + repr(render))
+            step = 0
+            while app.state[STATUS][CODE] == RUNNING:
+                app.state[STEP] = step
+                step += 1
 
-    status = app.state[STATE_STATUS]
-    if (status[STATUS_CODE] != CODE_ERROR and status[STATUS_CODE] != CODE_STOPPED):
-        set_sim_status(CODE_ENDED)
+                state = ob
+                if (isinstance(ob, np.ndarray)):
+                    state = ob.tolist()
+                elif (isinstance(ob, np.int64) or isinstance(ob, int)):
+                    state = (float(ob),)
+                else:
+                    print("type of state`: " + repr(type(state)))
 
-    # Close the env and write monitor result info to disk
-    env.close()
+                app.state[OBSERVATION] = state
+
+                on_step_result = agent_on_step(
+                    state, last_reward, last_action, done, agent_context)
+
+                # print("on_step_result " + repr(on_step_result))
+
+                if (app.state[STATUS][CODE] == ERROR):
+                    break
+
+                # last_action = env.action_space.sample()
+                last_action = on_step_result[ACTION]
+                agent_context = on_step_result[CONTEXT]
+
+                ob, last_reward, done, _ = env.step(last_action)
+                app.state[REWARD] += last_reward
+
+                if done:
+                    agent_on_step(ob, last_reward, last_action,
+                                  done, agent_context)
+                    print("- DONE!")
+                    break
+
+                print("- step = " + str(step) + ", reward = " +
+                      str(last_reward) + ", ob = " + repr(ob))
+
+                # Note there's no env.render() here. But the environment still can open window and
+                # render if asked by env.monitor: it calls env.render('rgb_array') to record video.
+                # Video is not recorded every episode, see capped_cubic_video_schedule for details.
+
+                # render = env.render('rgb_array')
+                # print("- render " + repr(render))
+
+        status = app.state[STATUS]
+        if (status[CODE] != ERROR and status[CODE] != STOPPED):
+            set_sim_status(ENDED)
+
+    except Exception as e:
+        print("exception: " + repr(e))
+        set_sim_status(ERROR, [str(e)])
+
+    finally:
+        # Close the env and write monitor result info to disk
+        env.close()
+
 
 # --- GraphQL
 
@@ -284,6 +306,7 @@ type_defs = gql("""
         episode: Int!
         step: Int!
         data: [Float!]!
+        reward: Float!
         simStatus: SimStatus!
     }
 
@@ -310,32 +333,20 @@ def resolve_listEnvironments(*_):
 
 @query.field("simStatus")
 def resolve_simStatus(*_):
-    return app.state[STATE_STATUS]
+    return app.state[STATUS]
 
 
 @query.field("observe")
 def resolve_observe(*_):
     observation = {
-        "episode": app.state[STATE_EPISODE],
-        "step": app.state[STATE_STEP],
-        "data": app.state[STATE_OBSERVATION],
-        "simStatus": app.state[STATE_STATUS]
+        EPISODE: app.state[EPISODE],
+        STEP: app.state[STEP],
+        REWARD: app.state[REWARD],
+        DATA: app.state[OBSERVATION],
+        SIM_STATUS: app.state[STATUS]
     }
     print('observe: ' + repr(observation))
     return observation
-
-
-@query.field("test")
-def resolve_test(*_):
-    result = execute_client_request('''
-        {
-            allSimulators {
-                id
-            }
-        }
-    ''')
-    print("result: " + str(result))
-    return str(result)
 
 
 @mutation.field("stop")
