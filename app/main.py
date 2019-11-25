@@ -280,7 +280,6 @@ type_defs = gql("""
     type SimStatus {
         id: ID!
         code: StatusCode!
-        mode: Mode!
         errors: [String!]!
     }
 
@@ -309,6 +308,7 @@ type_defs = gql("""
         observe: Observation!
         test: String!
     }
+
     type Mutation {
         run(config: ConfigInput!): SimStatus!
         stop: SimStatus!
