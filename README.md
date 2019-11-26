@@ -7,7 +7,16 @@
 ## Build
 
 ```
-pip install uvicorn gunicorn ariadne graphqlclient gym gym-retro asgi-lifespan
+pip install uvicorn gunicorn ariadne graphqlclient asgi-lifespan
+pip install gym gym-retro
+```
+
+## Containerize
+
+Then you can build your image from the directory that has your Dockerfile, e.g:
+
+```
+docker build -t my-service ./
 ```
 
 ## Run Debug Locally
@@ -25,7 +34,7 @@ For details, please refer to the [official documentation](https://github.com/tia
 To run the GraphQL service locally (Via Docker):
 
 ```
-docker run -it -p 4000:80 -t maana-python-ariadne
+docker run -it -p 4000:80 -t my-service
 ```
 
 ## Run Debug Locally (via Docker)
@@ -33,7 +42,7 @@ docker run -it -p 4000:80 -t maana-python-ariadne
 To run the GraphQL service via Docker with hot reload:
 
 ```
-docker run -it -p 4000:80 -v $(pwd):/app maana-python-ariadne /start-reload.sh
+docker run -it -p 4000:80 -v $(pwd):/app my-service /start-reload-docker.sh
 ```
 
 For details, please refer to the [official documentation](https://github.com/tiangolo/uvicorn-gunicorn-fastapi-docker#development-live-reload).
