@@ -16,6 +16,8 @@ import retro
 # --- Constants
 
 ACTION = "action"
+AGENT_STATS = "agentStats"
+AGENTS = "agents"
 AGENT_URI = "agentUri"
 CLIENT = "client"
 CODE = "code"
@@ -24,6 +26,7 @@ CONTEXT = "context"
 DATA = "data"
 ENDED = "Ended"
 ENVIRONMENT = "environment"
+ENVIRONMENT_ID = "environmentId"
 EPISODE = "episode"
 ERROR = "Error"
 ERRORS = "errors"
@@ -33,21 +36,23 @@ MESSAGE = "message"
 MODE = "mode"
 OBSERVATION = "observation"
 PERFORMING = "Performing"
-REWARD = "reward"
+LAST_ACTION = "lastAction"
+LAST_REWARD = "lastReward"
 RUNNING = "Running"
-SIM_STATUS = "simStatus"
 STARTING = "Starting"
 STATUS = "status"
 STEP = "step"
 STOPPED = "Stopped"
 THREAD = "thread"
 TOKEN = "token"
+TOTAL_REWARD = "totalReward"
 TRAINING = "Training"
+URI = "uri"
 
 # --- Simulation
 
 
-def set_sim_status(code, errors=[]):
+def set_status(code, errors=[]):
     ts = time.time()
     app.state[STATUS] = {
         ID: "gym@" + str(ts),
@@ -65,11 +70,13 @@ def create_state():
         EPISODE: 0,
         STEP: 0,
         OBSERVATION: (0,),
-        REWARD: 0,
+        LAST_ACTION: (0,),
+        LAST_REWARD: (0,),
+        TOTAL_REWARD: (0,),
         STATUS: None
     }
     app.state = state
-    set_sim_status(IDLE)
+    set_status(IDLE)
     return state
 
 
@@ -85,12 +92,12 @@ def execute_client_request(graphql, variables=None):
             errors = json_result[ERRORS]
             if (errors != None):
                 error_messages = [e[MESSAGE] for e in errors]
-                set_sim_status(ERROR, error_messages)
+                set_status(ERROR, error_messages)
                 return None
         return json_result[DATA]
     except Exception as e:
-        print("exception: " + repr(e))
-        set_sim_status(ERROR, [str(e)])
+        print("exec exception: " + repr(e))
+        set_status(ERROR, [str(e)])
         return None
 
 
@@ -107,7 +114,7 @@ def agent_on_reset():
 
 def agent_on_step(state, last_reward, last_action, done, context):
     result = execute_client_request('''
-        mutation onStep($state: [Float!]!, $lastReward: Float!, $lastAction: Int!, $isDone: Boolean!, $context: String) {
+        mutation onStep($state: [Float!]!, $lastReward: [Float!]!, $lastAction: [Float!]!, $isDone: Boolean!, $context: String) {
             onStep(state: $state, lastReward: $lastReward, lastAction: $lastAction, isDone: $isDone, context: $context) {
                 id
                 action
@@ -123,16 +130,23 @@ def agent_on_step(state, last_reward, last_action, done, context):
 
 
 def run_simulation(config):
-    set_sim_status(STARTING)
-    env = try_make_env(config[ENVIRONMENT])
+    set_status(STARTING)
+
+    app.state[CONFIG] = config
+
+    env = try_make_env(config[ENVIRONMENT_ID])
     if (env == None):
-        set_sim_status(
-            ERROR, ["Can't load environment: " + config[ENVIRONMENT]])
+        set_status(
+            ERROR, ["Can't load environment: " + config[ENVIRONMENT_ID]])
         return app.state[STATUS]
     app.state[ENVIRONMENT] = env
 
-    client = GraphQLClient(config[AGENT_URI])
-    client.inject_token("Bearer " + config[TOKEN])
+    agents = config[AGENTS]
+    uri = agents[0][URI]
+    token = agents[0][TOKEN]
+
+    client = GraphQLClient(uri)
+    client.inject_token("Bearer " + token)
     app.state[CLIENT] = client
 
     thread = threading.Thread(target=run_episodes, args=(99,))
@@ -144,7 +158,7 @@ def run_simulation(config):
 
 
 def stop_simulation():
-    set_sim_status(STOPPED)
+    set_status(STOPPED)
 
     # Close the env and write monitor result info to disk
     env = app.state[ENVIRONMENT]
@@ -172,9 +186,10 @@ def run_episodes(episode_count):
     try:
         print("run_episodes:" + str(episode_count))
         app.state[EPISODE] = 0
-        app.state[REWARD] = 0
+        app.state[LAST_ACTION] = (0,)
+        app.state[LAST_REWARD] = (0,)
 
-        set_sim_status(RUNNING)
+        set_status(RUNNING)
 
         env = app.state[ENVIRONMENT]
 
@@ -185,8 +200,8 @@ def run_episodes(episode_count):
             app.state[EPISODE] = i
 
             done = False
-            last_reward = 0
-            last_action = 0
+            last_action = (0,)
+            last_reward = (0,)
 
             ob = env.reset()
             print("episode #" + str(i) + ": " + repr(ob))
@@ -207,6 +222,8 @@ def run_episodes(episode_count):
                     print("type of state`: " + repr(type(state)))
 
                 app.state[OBSERVATION] = state
+                app.state[LAST_ACTION] = last_action
+                app.state[LAST_REWARD] = last_reward
 
                 on_step_result = agent_on_step(
                     state, last_reward, last_action, done, agent_context)
@@ -220,8 +237,10 @@ def run_episodes(episode_count):
                 last_action = on_step_result[ACTION]
                 agent_context = on_step_result[CONTEXT]
 
-                ob, last_reward, done, _ = env.step(last_action)
-                app.state[REWARD] += last_reward
+                ob, last_reward, done, _ = env.step(last_action[0])
+                last_reward = (last_reward,)
+                app.state[TOTAL_REWARD] = (app.state[TOTAL_REWARD][0] +
+                                           last_reward[0],)
 
                 if done:
                     agent_on_step(ob, last_reward, last_action,
@@ -241,11 +260,11 @@ def run_episodes(episode_count):
 
         status = app.state[STATUS]
         if (status[CODE] != ERROR and status[CODE] != STOPPED):
-            set_sim_status(ENDED)
+            set_status(ENDED)
 
     except Exception as e:
-        print("exception: " + repr(e))
-        set_sim_status(ERROR, [str(e)])
+        print("run exception: " + repr(e))
+        set_status(ERROR, [str(e)])
 
     finally:
         # Close the env and write monitor result info to disk
@@ -263,58 +282,118 @@ mutation = MutationType()
 # Wrapping string in gql function provides validation and better error traceback
 type_defs = gql("""
 
-    enum StatusCode {
-        Idle
-        Starting
-        Running
-        Stopped
-        Ended
-        Error
-    }
+# Boilerplate
+type Info {
+  id: ID!
+  name: String!
+  description: String
+}
 
-    enum Mode {
-        Training
-        Performing
-    }
+# Unkown
+# Idle
+# Starting
+# Running
+# Stopped
+# Ended
+# Error
+type StatusCode {
+  id: ID!
+}
 
-    type SimStatus {
-        id: ID!
-        code: StatusCode!
-        errors: [String!]!
-    }
+# Training
+# Performing
+type Mode {
+  id: ID!
+}
 
-    input ConfigInput {
-        environment: ID!
-        mode: Mode!
-        agentUri: String!
-        token: String!
-    }
+input AgentInput {
+  type: String
+  uri: String
+  token: String
+  features: [Float!]
+}
 
-    type Environment {
-        id: ID!
-    }
+type Agent {
+  type: String
+  uri: String
+  token: String
+  features: [Float!]
+}
 
-    type Observation {
-        episode: Int!
-        step: Int!
-        data: [Float!]!
-        reward: Float!
-        simStatus: SimStatus!
-    }
+input ConfigInput {
+  episodes: Int
+  environmentId: ID!
+  modeId: ID
+  agents: [AgentInput!]!
+}
 
-    type Query {
-        listEnvironments: [Environment!]!
-        simStatus: SimStatus!
-        observe: Observation!
-        test: String!
-    }
+type Config {
+  episodes: Int!
+  environment: Environment!
+  mode: Mode!
+  agents: [Agent!]!
+}
 
-    type Mutation {
-        run(config: ConfigInput!): SimStatus!
-        stop: SimStatus!
-    }
+type Environment {
+  id: ID!
+  name: String
+  observationSpace: FeatureSpace
+  actionSpace: FeatureSpace
+  rewardSpace: FeatureSpace
+}
+
+type Dimension {
+  id: ID!
+  isContinuous: Boolean
+  rangeMin: Float
+  rangeMax: Float
+}
+
+type FeatureSpace {
+  id: ID!
+  name: String
+  dimensions: [Dimension]
+}
+
+type Status {
+  id: ID!
+  code: StatusCode!
+  errors: [String!]!
+}
+
+type AgentStats {
+  lastReward: [Float!]!
+  lastAction: [Float!]!
+  totalReward: [Float!]!
+}
+
+type Observation {
+  episode: Int!
+  step: Int!
+  mode: Mode
+  data: [Float!]!
+  agentStats: [AgentStats!]!
+  status: Status!
+}
+
+type Query {
+  listEnvironments: [Environment!]!
+  configuration: Config!
+  status: Status!
+  observe: Observation!
+}
+
+type Mutation {
+  run(config: ConfigInput!): Status!
+  stop: Status!
+}
+
 """)
 
+
+def transformStatus(status):
+    print(repr(status))
+    return {"id": status["id"], "code": {"id": status["code"]}, "errors": status["errors"]}
 
 # Resolvers are simple python functions
 @query.field("listEnvironments")
@@ -324,9 +403,9 @@ def resolve_listEnvironments(*_):
     return res
 
 
-@query.field("simStatus")
-def resolve_simStatus(*_):
-    return app.state[STATUS]
+@query.field("status")
+def resolve_status(*_):
+    return transformStatus(app.state[STATUS])
 
 
 @query.field("observe")
@@ -334,9 +413,13 @@ def resolve_observe(*_):
     observation = {
         EPISODE: app.state[EPISODE],
         STEP: app.state[STEP],
-        REWARD: app.state[REWARD],
+        AGENT_STATS: ({
+            LAST_ACTION: app.state[LAST_ACTION],
+            LAST_REWARD: app.state[LAST_REWARD],
+            TOTAL_REWARD: app.state[TOTAL_REWARD],
+        },),
         DATA: app.state[OBSERVATION],
-        SIM_STATUS: app.state[STATUS]
+        STATUS: transformStatus(app.state[STATUS])
     }
     print('observe: ' + repr(observation))
     return observation
@@ -344,12 +427,12 @@ def resolve_observe(*_):
 
 @mutation.field("stop")
 def resolve_stop(*_):
-    return stop_simulation()
+    return transformStatus(stop_simulation())
 
 
 @mutation.field("run")
 def resolve_run(*_, config):
-    return run_simulation(config)
+    return transformStatus(run_simulation(config))
 
 
 # Create executable GraphQL schema

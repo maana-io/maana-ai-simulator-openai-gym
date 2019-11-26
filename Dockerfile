@@ -70,6 +70,6 @@ RUN apk add --no-cache \
   \
   apk del .build-dependencies
 
-RUN pip install ariadne graphqlclient gym gym-retro asgi-lifespan
+RUN pip install uvicorn gunicorn ariadne graphqlclient gym gym-retro asgi-lifespan
 
 COPY ./app /app

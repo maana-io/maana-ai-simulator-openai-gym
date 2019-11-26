@@ -4,37 +4,52 @@ query listEnvironments {
   }
 }
 
-query simStatus {
-  simStatus {
+query status {
+  status {
     id
+    code {
+      id
+    }
     errors
   }
 }
 
 query observe {
   observe {
-    simStatus {
+    episode
+    step
+    data
+    agentLasts {
+      lastReward
+      lastAction
+    }
+    status {
       id
+      code {
+        id
+      }
       errors
     }
   }
 }
 
-query test {
-  test
-}
-
 mutation run {
   run(
     config: {
-      environment: "Taxi-v3"
-      mode: Training
-      agentUri: "https://lastknowngood.knowledge.maana.io:8443/service/b00a2def-69a1-4238-80f7-c7920aa0afd4/graphql"
-      token: "<secret>"
+      environmentId: "CartPole-v0"
+      modeId: "Training"
+      agents: [
+        {
+          uri: "https://lastknowngood.knowledge.maana.io:8443/service/b00a2def-69a1-4238-80f7-c7920aa0afd4/graphql"
+          token: "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJ2WnlaWG95VGtOVG9lV1VKRk1rQnpNeVVDTDl4dzFkUmhXTmwtRUJuLW5zIn0.eyJqdGkiOiIzNjA3MjBkMi0wMWNlLTRjMDQtYjhhYS00YmRhN2UwNGFmZjIiLCJleHAiOjE1NzQ0OTYzMDAsIm5iZiI6MCwiaWF0IjoxNTc0NDk0NTAwLCJpc3MiOiJodHRwczovL2tleWNsb2FrZGV2Lmtub3dsZWRnZS5tYWFuYS5pbzo4NDQzL2F1dGgvcmVhbG1zL21hYW5hTGFzdEtub3duR29vZCIsImF1ZCI6WyJtYWFuYUF1ZGllbmNlIiwiYWNjb3VudCJdLCJzdWIiOiIxNGMzMmYzOS1kNmE1LTRiYTEtYTc5Yy0yMjllYTdjODgwMjYiLCJ0eXAiOiJCZWFyZXIiLCJhenAiOiJrcG9ydGFsRGV2Iiwibm9uY2UiOiIwODBjYjU2YS02NzEwLTRhNmItODVhZC01NjJiODY0ODY2NmIiLCJhdXRoX3RpbWUiOjE1NzQ0OTExNDQsInNlc3Npb25fc3RhdGUiOiJhZmZhNjk3OC02ZDhlLTQ4MWItYTMxNC03OTY0ODA2NGQ3MjMiLCJhY3IiOiIwIiwiYWxsb3dlZC1vcmlnaW5zIjpbIioiXSwicmVhbG1fYWNjZXNzIjp7InJvbGVzIjpbIm9mZmxpbmVfYWNjZXNzIiwidW1hX2F1dGhvcml6YXRpb24iXX0sInJlc291cmNlX2FjY2VzcyI6eyJhY2NvdW50Ijp7InJvbGVzIjpbIm1hbmFnZS1hY2NvdW50IiwibWFuYWdlLWFjY291bnQtbGlua3MiLCJ2aWV3LXByb2ZpbGUiXX19LCJzY29wZSI6Im9wZW5pZCBwcm9maWxlIG1hYW5hQXVkaWVuY2UgZW1haWwiLCJlbWFpbF92ZXJpZmllZCI6ZmFsc2UsIm5hbWUiOiJEb25hbGQgVGhvbXBzb24iLCJwcmVmZXJyZWRfdXNlcm5hbWUiOiJkb25hbGRAbWFhbmEuaW8iLCJnaXZlbl9uYW1lIjoiRG9uYWxkIiwiZmFtaWx5X25hbWUiOiJUaG9tcHNvbiIsImVtYWlsIjoiZG9uYWxkQG1hYW5hLmlvIn0.cX9Nb3mrPiCZvyFFc-pIaGRDwzmsHHiYLG83c6mgdOfEk5wMLhTMbvPVzTA094CJgjUY0E437AZxNV8LDlVz9epaw3pVcXAeF9BfyI6ZLKuolpmHTYIaABDmsATQvX4Sy3NHlrQO3oUmb7fMbbW0spNSIexZA3_SYJ1LTSHoafF92n-V6vN-AmmMebPzle_aduE3vWUvphEYdc7Uj28KAAaz0MFV3Tsmls-NRQAT-hAiicBCYLjTPnUeAZ66ClNQscDXNblGAOCjeNz0gN5mgUQr5b2J9dWD69RAI-5RfDUJTsoGBq3K_74LDGA78HcHTaIMDag6vjDIWc2QcBAkUg"
+        }
+      ]
     }
   ) {
     id
-    code
+    code {
+      id
+    }
     errors
   }
 }
