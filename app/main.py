@@ -38,9 +38,11 @@ OBSERVATION = "observation"
 PERFORMING = "Performing"
 LAST_ACTION = "lastAction"
 LAST_REWARD = "lastReward"
+RENDER = "render"
 RUNNING = "Running"
 STARTING = "Starting"
 STATUS = "status"
+STATE = "state"
 STEP = "step"
 STOPPED = "Stopped"
 THREAD = "thread"
@@ -69,10 +71,11 @@ def create_state():
         ENVIRONMENT: None,
         EPISODE: 0,
         STEP: 0,
-        OBSERVATION: (0,),
+        STATE: (0,),
         LAST_ACTION: (0,),
         LAST_REWARD: (0,),
         TOTAL_REWARD: (0,),
+        RENDER: "",
         STATUS: None
     }
     app.state = state
@@ -188,6 +191,7 @@ def run_episodes(episode_count):
         app.state[EPISODE] = 0
         app.state[LAST_ACTION] = (0,)
         app.state[LAST_REWARD] = (0,)
+        app.state[TOTAL_REWARD] = (0,)
 
         set_status(RUNNING)
 
@@ -221,7 +225,7 @@ def run_episodes(episode_count):
                 else:
                     print("type of state`: " + repr(type(state)))
 
-                app.state[OBSERVATION] = state
+                app.state[STATE] = state
                 app.state[LAST_ACTION] = last_action
                 app.state[LAST_REWARD] = last_reward
 
@@ -373,6 +377,7 @@ type Observation {
   mode: Mode
   data: [Float!]!
   agentStats: [AgentStats!]!
+  render: String!
   status: Status!
 }
 
@@ -410,6 +415,11 @@ def resolve_status(*_):
 
 @query.field("observe")
 def resolve_observe(*_):
+
+    env = app.state[ENVIRONMENT]
+
+    render = env.render('ansi') if env else ""
+
     observation = {
         EPISODE: app.state[EPISODE],
         STEP: app.state[STEP],
@@ -418,7 +428,8 @@ def resolve_observe(*_):
             LAST_REWARD: app.state[LAST_REWARD],
             TOTAL_REWARD: app.state[TOTAL_REWARD],
         },),
-        DATA: app.state[OBSERVATION],
+        DATA: app.state[STATE],
+        RENDER: render,
         STATUS: transformStatus(app.state[STATUS])
     }
     print('observe: ' + repr(observation))
@@ -455,7 +466,6 @@ async def startup():
 @lifespan.on_event("shutdown")
 async def shutdown():
     print("Shutting down...")
-    stop_simulation()
     print("... done!")
 
 # Create an ASGI app using the schema, running in debug mode
