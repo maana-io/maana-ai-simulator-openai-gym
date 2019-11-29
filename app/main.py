@@ -397,7 +397,6 @@ type Mutation {
 
 
 def transformStatus(status):
-    print(repr(status))
     return {"id": status["id"], "code": {"id": status["code"]}, "errors": status["errors"]}
 
 # Resolvers are simple python functions
@@ -432,7 +431,7 @@ def resolve_observe(*_):
         RENDER: render,
         STATUS: transformStatus(app.state[STATUS])
     }
-    print('observe: ' + repr(observation))
+    # print('observe: ' + repr(observation))
     return observation
 
 
