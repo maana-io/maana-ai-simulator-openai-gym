@@ -11,7 +11,7 @@ from graphqlclient import GraphQLClient
 # OpenAI Gym
 import gym
 from gym import envs
-import retro
+# import retro
 
 # --- Constants
 
@@ -34,6 +34,7 @@ ID = "id"
 IDLE = "Idle"
 MESSAGE = "message"
 MODE = "mode"
+MODE_ID = "modeId"
 OBSERVATION = "observation"
 PERFORMING = "Performing"
 LAST_ACTION = "lastAction"
@@ -116,42 +117,60 @@ def execute_client_request(session_id, graphql, variables=None):
         return None
 
 
-def agent_on_reset(session_id):
+def agent_on_reset(session_id, state_space, action_space, model_id, is_training):
     result = execute_client_request(session_id, '''
-    {
-        onReset
-    }
-    ''')
+        mutation onReset($stateSpace: Int!, $actionSpace: Int!, $modelId: ID!, $isTraining: Boolean!) {
+            onReset(stateSpace: $stateSpace, actionSpace: $actionSpace, modelId: $modelId, isTraining: $isTraining)
+        }
+    ''', {
+        "stateSpace": state_space, "actionSpace": action_space, "modelId": model_id, "isTraining": is_training
+    })
     if (result == None):
         return None
     return result["onReset"]
 
 
-def agent_on_step(session_id, state, last_reward, last_action, done, context):
+def agent_on_step(session_id, state, last_reward, last_action, step, context):
     result = execute_client_request(session_id, '''
-        mutation onStep($state: [Float!]!, $lastReward: [Float!]!, $lastAction: [Float!]!, $isDone: Boolean!, $context: String) {
-            onStep(state: $state, lastReward: $lastReward, lastAction: $lastAction, isDone: $isDone, context: $context) {
+        mutation onStep($state: [Float!]!, $lastReward: [Float!]!, $lastAction: [Float!]!, $step: Int!, $context: String) {
+            onStep(state: $state, lastReward: $lastReward, lastAction: $lastAction, step: $step, context: $context) {
                 id
                 action
                 context
             }
         }
     ''', {
-        "state": state, "lastReward": last_reward, "lastAction": last_action, "isDone": done, "context": context
+        "state": state, "lastReward": last_reward, "lastAction": last_action, "step": step, "context": context
     })
     if (result == None):
         return None
     return result["onStep"]
 
 
+def agent_on_done(session_id, last_state, last_reward, last_action, total_steps, context):
+    result = execute_client_request(session_id, '''
+        mutation onDone($lastState: [Float!]!, $lastReward: [Float!]!, $lastAction: [Float!]!, $totalSteps: Int!, $context: String) {
+            onDone(lastState: $lastState, lastReward: $lastReward, lastAction: $lastAction, totalSteps: $totalSteps, context: $context) {
+                id
+                action
+                context
+            }
+        }
+    ''', {
+        "lastState": last_state, "lastReward": last_reward, "lastAction": last_action, "totalSteps": total_steps, "context": context
+    })
+    if (result == None):
+        return None
+    return result["onDone"]
+
+
 def run_simulation(config):
 
     session_id = config[SESSION_ID]
     app_state = get_app_state(session_id)
+    app_state[CONFIG] = config
 
     set_status(session_id, STARTING)
-
-    app_state[CONFIG] = config
 
     env = try_make_env(config[ENVIRONMENT_ID])
     if (env == None):
@@ -200,13 +219,15 @@ def try_make_env(environmentId):
     try:
         return gym.make(environmentId)
     except:
-        return retro.make(environmentId)
+        # return retro.make(environmentId)
+        print("Invalid environment: " + environmentId)
     return None
 
 
 def run_episodes(session_id, episode_count):
     try:
         app_state = get_app_state(session_id)
+        config = app_state[CONFIG]
         app_state[EPISODE] = 0
         app_state[LAST_ACTION] = (0,)
         app_state[LAST_REWARD] = (0,)
@@ -215,6 +236,10 @@ def run_episodes(session_id, episode_count):
         set_status(session_id, RUNNING)
 
         env = app_state[ENVIRONMENT]
+
+        is_training = config[MODE_ID] == TRAINING
+        action_space = env.action_space.n
+        state_space = env.observation_space.n
 
         for i in range(episode_count):
             if (app_state[STATUS][CODE] != RUNNING):
@@ -229,7 +254,9 @@ def run_episodes(session_id, episode_count):
             ob = env.reset()
             print("episode #" + str(i) + ": " + repr(ob))
 
-            agent_context = agent_on_reset(session_id)
+            agent_reset_result = agent_on_reset(
+                session_id, state_space, action_space, session_id, is_training)
+            agent_context = agent_reset_result
 
             step = 0
             while app_state[STATUS][CODE] == RUNNING:
@@ -253,7 +280,7 @@ def run_episodes(session_id, episode_count):
                     state,
                     last_reward,
                     last_action,
-                    done,
+                    step,
                     agent_context)
 
                 # print("on_step_result " + repr(on_step_result))
@@ -271,8 +298,13 @@ def run_episodes(session_id, episode_count):
                                            last_reward[0],)
 
                 if done:
-                    agent_on_step(session_id, ob, last_reward, last_action,
-                                  done, agent_context)
+                    on_done_result = agent_on_done(
+                        session_id,
+                        ob,
+                        last_reward,
+                        last_action,
+                        step,
+                        agent_context)
                     print("- DONE!")
                     break
 
