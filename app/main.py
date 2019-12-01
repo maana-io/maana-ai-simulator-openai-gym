@@ -40,6 +40,7 @@ LAST_ACTION = "lastAction"
 LAST_REWARD = "lastReward"
 RENDER = "render"
 RUNNING = "Running"
+SESSION_ID = "sessionId"
 STARTING = "Starting"
 STATUS = "status"
 STATE = "state"
@@ -49,22 +50,26 @@ THREAD = "thread"
 TOKEN = "token"
 TOTAL_REWARD = "totalReward"
 TRAINING = "Training"
+UNKNOWN = "Unknown"
 URI = "uri"
 
 # --- Simulation
 
 
-def set_status(code, errors=[]):
+def set_status(session_id, code, errors=[]):
+    app_state = get_app_state(session_id)
+
     ts = time.time()
-    app.state[STATUS] = {
-        ID: "gym@" + str(ts),
+    app_state[STATUS] = {
+        ID: str(session_id) + ":" + str(ts),
         CODE: code,
         ERRORS: errors}
-    return app.state[STATUS]
+    return app_state[STATUS]
 
 
-def create_state():
+def create_state(session_id):
     state = {
+        ID: session_id,
         CLIENT: None,
         CONFIG: None,
         THREAD: None,
@@ -78,14 +83,21 @@ def create_state():
         RENDER: "",
         STATUS: None
     }
-    app.state = state
-    set_status(IDLE)
     return state
 
 
-def execute_client_request(graphql, variables=None):
+def get_app_state(session_id):
+    if (not session_id in app.sessions):
+        app_state = create_state(session_id)
+        app.sessions[session_id] = app_state
+        set_status(session_id, UNKNOWN)
+    return app.sessions[session_id]
+
+
+def execute_client_request(session_id, graphql, variables=None):
     try:
-        client = app.state[CLIENT]
+        app_state = get_app_state(session_id)
+        client = app_state[CLIENT]
         if (client == None):
             raise Exception("No client.  Running?")
         result = client.execute(graphql, variables)
@@ -95,17 +107,17 @@ def execute_client_request(graphql, variables=None):
             errors = json_result[ERRORS]
             if (errors != None):
                 error_messages = [e[MESSAGE] for e in errors]
-                set_status(ERROR, error_messages)
+                set_status(session_id, ERROR, error_messages)
                 return None
         return json_result[DATA]
     except Exception as e:
         print("exec exception: " + repr(e))
-        set_status(ERROR, [str(e)])
+        set_status(session_id, ERROR, [str(e)])
         return None
 
 
-def agent_on_reset():
-    result = execute_client_request('''
+def agent_on_reset(session_id):
+    result = execute_client_request(session_id, '''
     {
         onReset
     }
@@ -115,8 +127,8 @@ def agent_on_reset():
     return result["onReset"]
 
 
-def agent_on_step(state, last_reward, last_action, done, context):
-    result = execute_client_request('''
+def agent_on_step(session_id, state, last_reward, last_action, done, context):
+    result = execute_client_request(session_id, '''
         mutation onStep($state: [Float!]!, $lastReward: [Float!]!, $lastAction: [Float!]!, $isDone: Boolean!, $context: String) {
             onStep(state: $state, lastReward: $lastReward, lastAction: $lastAction, isDone: $isDone, context: $context) {
                 id
@@ -133,16 +145,20 @@ def agent_on_step(state, last_reward, last_action, done, context):
 
 
 def run_simulation(config):
-    set_status(STARTING)
 
-    app.state[CONFIG] = config
+    session_id = config[SESSION_ID]
+    app_state = get_app_state(session_id)
+
+    set_status(session_id, STARTING)
+
+    app_state[CONFIG] = config
 
     env = try_make_env(config[ENVIRONMENT_ID])
     if (env == None):
         set_status(
             ERROR, ["Can't load environment: " + config[ENVIRONMENT_ID]])
-        return app.state[STATUS]
-    app.state[ENVIRONMENT] = env
+        return app_state[STATUS]
+    app_state[ENVIRONMENT] = env
 
     agents = config[AGENTS]
     uri = agents[0][URI]
@@ -150,29 +166,32 @@ def run_simulation(config):
 
     client = GraphQLClient(uri)
     client.inject_token("Bearer " + token)
-    app.state[CLIENT] = client
+    app_state[CLIENT] = client
 
-    thread = threading.Thread(target=run_episodes, args=(99,))
+    thread = threading.Thread(target=run_episodes, args=(session_id, 99,))
     print("thread: " + repr(thread))
-    app.state[THREAD] = thread
+    app_state[THREAD] = thread
     thread.start()
 
-    return app.state[STATUS]
+    return app_state[STATUS]
 
 
-def stop_simulation():
-    set_status(STOPPED)
+def stop_simulation(session_id):
+
+    app_state = get_app_state(session_id)
+
+    set_status(session_id, STOPPED)
 
     # Close the env and write monitor result info to disk
-    env = app.state[ENVIRONMENT]
+    env = app_state[ENVIRONMENT]
     if (env != None):
         env.close()
 
-    thread = app.state[THREAD]
+    thread = app_state[THREAD]
     if (thread != None):
         thread.join()
 
-    return app.state[STATUS]
+    return app_state[STATUS]
 
 
 # --- OpenAI Gym
@@ -185,23 +204,23 @@ def try_make_env(environmentId):
     return None
 
 
-def run_episodes(episode_count):
+def run_episodes(session_id, episode_count):
     try:
-        print("run_episodes:" + str(episode_count))
-        app.state[EPISODE] = 0
-        app.state[LAST_ACTION] = (0,)
-        app.state[LAST_REWARD] = (0,)
-        app.state[TOTAL_REWARD] = (0,)
+        app_state = get_app_state(session_id)
+        app_state[EPISODE] = 0
+        app_state[LAST_ACTION] = (0,)
+        app_state[LAST_REWARD] = (0,)
+        app_state[TOTAL_REWARD] = (0,)
 
-        set_status(RUNNING)
+        set_status(session_id, RUNNING)
 
-        env = app.state[ENVIRONMENT]
+        env = app_state[ENVIRONMENT]
 
         for i in range(episode_count):
-            if (app.state[STATUS][CODE] != RUNNING):
+            if (app_state[STATUS][CODE] != RUNNING):
                 break
 
-            app.state[EPISODE] = i
+            app_state[EPISODE] = i
 
             done = False
             last_action = (0,)
@@ -210,11 +229,11 @@ def run_episodes(episode_count):
             ob = env.reset()
             print("episode #" + str(i) + ": " + repr(ob))
 
-            agent_context = agent_on_reset()
+            agent_context = agent_on_reset(session_id)
 
             step = 0
-            while app.state[STATUS][CODE] == RUNNING:
-                app.state[STEP] = step
+            while app_state[STATUS][CODE] == RUNNING:
+                app_state[STEP] = step
                 step += 1
 
                 state = ob
@@ -225,16 +244,21 @@ def run_episodes(episode_count):
                 else:
                     print("type of state`: " + repr(type(state)))
 
-                app.state[STATE] = state
-                app.state[LAST_ACTION] = last_action
-                app.state[LAST_REWARD] = last_reward
+                app_state[STATE] = state
+                app_state[LAST_ACTION] = last_action
+                app_state[LAST_REWARD] = last_reward
 
                 on_step_result = agent_on_step(
-                    state, last_reward, last_action, done, agent_context)
+                    session_id,
+                    state,
+                    last_reward,
+                    last_action,
+                    done,
+                    agent_context)
 
                 # print("on_step_result " + repr(on_step_result))
 
-                if (app.state[STATUS][CODE] == ERROR):
+                if (app_state[STATUS][CODE] == ERROR):
                     break
 
                 # last_action = env.action_space.sample()
@@ -243,17 +267,17 @@ def run_episodes(episode_count):
 
                 ob, last_reward, done, _ = env.step(last_action[0])
                 last_reward = (last_reward,)
-                app.state[TOTAL_REWARD] = (app.state[TOTAL_REWARD][0] +
+                app_state[TOTAL_REWARD] = (app_state[TOTAL_REWARD][0] +
                                            last_reward[0],)
 
                 if done:
-                    agent_on_step(ob, last_reward, last_action,
+                    agent_on_step(session_id, ob, last_reward, last_action,
                                   done, agent_context)
                     print("- DONE!")
                     break
 
-                print("- step = " + str(step) + ", reward = " +
-                      str(last_reward) + ", ob = " + repr(ob))
+                # print("- step = " + str(step) + ", reward = " +
+                #       str(last_reward) + ", ob = " + repr(ob))
 
                 # Note there's no env.render() here. But the environment still can open window and
                 # render if asked by env.monitor: it calls env.render('rgb_array') to record video.
@@ -262,13 +286,13 @@ def run_episodes(episode_count):
                 # render = env.render('rgb_array')
                 # print("- render " + repr(render))
 
-        status = app.state[STATUS]
+        status = app_state[STATUS]
         if (status[CODE] != ERROR and status[CODE] != STOPPED):
-            set_status(ENDED)
+            set_status(session_id, ENDED)
 
     except Exception as e:
         print("run exception: " + repr(e))
-        set_status(ERROR, [str(e)])
+        set_status(session_id, ERROR, [str(e)])
 
     finally:
         # Close the env and write monitor result info to disk
@@ -325,6 +349,7 @@ type Agent {
 }
 
 input ConfigInput {
+  sessionId: ID!
   episodes: Int
   environmentId: ID!
   modeId: ID
@@ -332,6 +357,7 @@ input ConfigInput {
 }
 
 type Config {
+  sessionId: ID!
   episodes: Int!
   environment: Environment!
   mode: Mode!
@@ -383,14 +409,13 @@ type Observation {
 
 type Query {
   listEnvironments: [Environment!]!
-  configuration: Config!
-  status: Status!
-  observe: Observation!
+  status(sessionId: ID!): Status!
+  observe(sessionId: ID!): Observation!
 }
 
 type Mutation {
   run(config: ConfigInput!): Status!
-  stop: Status!
+  stop(sessionId: ID!): Status!
 }
 
 """)
@@ -408,36 +433,38 @@ def resolve_listEnvironments(*_):
 
 
 @query.field("status")
-def resolve_status(*_):
-    return transformStatus(app.state[STATUS])
+def resolve_status(*_, sessionId):
+    return transformStatus(get_app_state(sessionId)[STATUS])
 
 
 @query.field("observe")
-def resolve_observe(*_):
+def resolve_observe(*_, sessionId):
 
-    env = app.state[ENVIRONMENT]
+    app_state = get_app_state(sessionId)
+
+    env = app_state[ENVIRONMENT]
 
     render = env.render('ansi') if env else ""
 
     observation = {
-        EPISODE: app.state[EPISODE],
-        STEP: app.state[STEP],
+        EPISODE: app_state[EPISODE],
+        STEP: app_state[STEP],
         AGENT_STATS: ({
-            LAST_ACTION: app.state[LAST_ACTION],
-            LAST_REWARD: app.state[LAST_REWARD],
-            TOTAL_REWARD: app.state[TOTAL_REWARD],
+            LAST_ACTION: app_state[LAST_ACTION],
+            LAST_REWARD: app_state[LAST_REWARD],
+            TOTAL_REWARD: app_state[TOTAL_REWARD],
         },),
-        DATA: app.state[STATE],
+        DATA: app_state[STATE],
         RENDER: render,
-        STATUS: transformStatus(app.state[STATUS])
+        STATUS: transformStatus(app_state[STATUS])
     }
     # print('observe: ' + repr(observation))
     return observation
 
 
 @mutation.field("stop")
-def resolve_stop(*_):
-    return transformStatus(stop_simulation())
+def resolve_stop(*_, sessionId):
+    return transformStatus(stop_simulation(sessionId))
 
 
 @mutation.field("run")
@@ -475,5 +502,4 @@ app = GraphQL(schema, debug=True)
 # and anything else goes to 'app'.
 app = LifespanMiddleware(app, lifespan=lifespan)
 
-# Create shared state on the app object
-create_state()
+app.sessions = {}
