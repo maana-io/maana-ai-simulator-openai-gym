@@ -132,6 +132,7 @@ def agent_on_reset(session_id, state_space, action_space, model_id, is_training)
 
 
 def agent_on_step(session_id, state, last_reward, last_action, step, context):
+    print ("on Step - Start")
     result = execute_client_request(session_id, '''
         mutation onStep($state: [Float!]!, $lastReward: [Float!]!, $lastAction: [Float!]!, $step: Int!, $context: String) {
             onStep(state: $state, lastReward: $lastReward, lastAction: $lastAction, step: $step, context: $context) {
@@ -143,6 +144,7 @@ def agent_on_step(session_id, state, last_reward, last_action, step, context):
     ''', {
         "state": state, "lastReward": last_reward, "lastAction": last_action, "step": step, "context": context
     })
+    print ("on Step - End")
     if (result == None):
         return None
     # print("onStep: " + repr(result))
