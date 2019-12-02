@@ -150,11 +150,7 @@ def agent_on_step(session_id, state, last_reward, last_action, step, context):
 def agent_on_done(session_id, last_state, last_reward, last_action, total_steps, context):
     result = execute_client_request(session_id, '''
         mutation onDone($lastState: [Float!]!, $lastReward: [Float!]!, $lastAction: [Float!]!, $totalSteps: Int!, $context: String) {
-            onDone(lastState: $lastState, lastReward: $lastReward, lastAction: $lastAction, totalSteps: $totalSteps, context: $context) {
-                id
-                action
-                context
-            }
+            onDone(lastState: $lastState, lastReward: $lastReward, lastAction: $lastAction, totalSteps: $totalSteps, context: $context)
         }
     ''', {
         "lastState": last_state, "lastReward": last_reward, "lastAction": last_action, "totalSteps": total_steps, "context": context
