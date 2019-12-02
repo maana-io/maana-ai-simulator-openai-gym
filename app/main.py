@@ -119,7 +119,7 @@ def execute_client_request(session_id, graphql, variables=None):
 
 def agent_on_reset(session_id, state_space, action_space, model_id, is_training):
     result = execute_client_request(session_id, '''
-        mutation onReset($stateSpace: Int!, $actionSpace: Int!, $modelId: ID!, $isTraining: Boolean!) {
+        mutation onReset($stateSpace: Int, $actionSpace: Int, $modelId: ID, $isTraining: Boolean) {
             onReset(stateSpace: $stateSpace, actionSpace: $actionSpace, modelId: $modelId, isTraining: $isTraining)
         }
     ''', {
@@ -127,6 +127,7 @@ def agent_on_reset(session_id, state_space, action_space, model_id, is_training)
     })
     if (result == None):
         return None
+    # print("onReset: " + repr(result))
     return result["onReset"]
 
 
@@ -144,6 +145,7 @@ def agent_on_step(session_id, state, last_reward, last_action, step, context):
     })
     if (result == None):
         return None
+    # print("onStep: " + repr(result))
     return result["onStep"]
 
 
@@ -157,6 +159,7 @@ def agent_on_done(session_id, last_state, last_reward, last_action, total_steps,
     })
     if (result == None):
         return None
+    # print("onDone: " + repr(result))
     return result["onDone"]
 
 
