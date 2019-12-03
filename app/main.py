@@ -2,6 +2,7 @@
 from asgi_lifespan import Lifespan, LifespanMiddleware
 import json
 import time
+import datetime
 import threading
 import numpy as np
 # GraphQL
@@ -132,7 +133,7 @@ def agent_on_reset(session_id, state_space, action_space, model_id, is_training)
 
 
 def agent_on_step(session_id, state, last_reward, last_action, step, context):
-    print ("on Step - Start")
+    t1 = time.time()
     result = execute_client_request(session_id, '''
         mutation onStep($state: [Float!]!, $lastReward: [Float!]!, $lastAction: [Float!]!, $step: Int!, $context: String) {
             onStep(state: $state, lastReward: $lastReward, lastAction: $lastAction, step: $step, context: $context) {
@@ -144,7 +145,8 @@ def agent_on_step(session_id, state, last_reward, last_action, step, context):
     ''', {
         "state": state, "lastReward": last_reward, "lastAction": last_action, "step": step, "context": context
     })
-    print ("on Step - End")
+    t2 = time.time()
+    print("onStep took " + str(t2 - t1) + " seconds")
     if (result == None):
         return None
     # print("onStep: " + repr(result))
@@ -477,7 +479,7 @@ def resolve_observe(*_, sessionId):
 
     env = app_state[ENVIRONMENT]
 
-    render = env.render('ansi') if env else ""
+    render = env.render("ansi") if env else ""
 
     observation = {
         EPISODE: app_state[EPISODE],
