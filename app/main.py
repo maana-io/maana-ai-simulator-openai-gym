@@ -42,6 +42,7 @@ LAST_ACTION = "lastAction"
 LAST_REWARD = "lastReward"
 RENDER = "render"
 RUNNING = "Running"
+SCORE = "score"
 SESSION_ID = "sessionId"
 STARTING = "Starting"
 STATUS = "status"
@@ -79,6 +80,7 @@ def create_state(session_id):
         EPISODE: 0,
         STEP: 0,
         STATE: (0,),
+        SCORE: 0,
         LAST_ACTION: (0,),
         LAST_REWARD: (0,),
         TOTAL_REWARD: (0,),
@@ -146,7 +148,7 @@ def agent_on_step(session_id, state, last_reward, last_action, step, context):
         "state": state, "lastReward": last_reward, "lastAction": last_action, "step": step, "context": context
     })
     t2 = time.time()
-    print("onStep took " + str(t2 - t1) + " seconds")
+    print("[" + session_id + "] onStep took " + str(t2 - t1) + " seconds")
     if (result == None):
         return None
     # print("onStep: " + repr(result))
@@ -232,9 +234,6 @@ def run_episodes(session_id, episode_count):
         app_state = get_app_state(session_id)
         config = app_state[CONFIG]
         app_state[EPISODE] = 0
-        app_state[LAST_ACTION] = (0,)
-        app_state[LAST_REWARD] = (0,)
-        app_state[TOTAL_REWARD] = (0,)
 
         set_status(session_id, RUNNING)
 
@@ -248,14 +247,20 @@ def run_episodes(session_id, episode_count):
             if (app_state[STATUS][CODE] != RUNNING):
                 break
 
+            # Reset per episode
+            done = False
+            app_state[SCORE] = 0
+            app_state[LAST_ACTION] = (0,)
+            app_state[LAST_REWARD] = (0,)
+            app_state[TOTAL_REWARD] = (0,)
+
+            # Update state
             app_state[EPISODE] = i
 
-            done = False
-            last_action = (0,)
-            last_reward = (0,)
-
-            ob = env.reset()
-            print("episode #" + str(i) + ": " + repr(ob))
+            # Tell Gym to reset and get the initial state
+            state = env.reset()
+            print("[" + session_id + "] episode #" +
+                  str(i) + ": " + repr(state))
 
             agent_reset_result = agent_on_reset(
                 session_id, state_space, action_space, session_id, is_training)
@@ -266,67 +271,59 @@ def run_episodes(session_id, episode_count):
                 app_state[STEP] = step
                 step += 1
 
-                state = ob
-                if (isinstance(ob, np.ndarray)):
-                    state = ob.tolist()
-                elif (isinstance(ob, np.int64) or isinstance(ob, int)):
-                    state = (float(ob),)
+                if (isinstance(state, np.ndarray)):
+                    state = state.tolist()
+                elif (isinstance(state, np.int64) or isinstance(state, int)):
+                    state = (float(state),)
                 else:
                     print("type of state`: " + repr(type(state)))
 
                 app_state[STATE] = state
-                app_state[LAST_ACTION] = last_action
-                app_state[LAST_REWARD] = last_reward
+                app_state[SCORE] = app_state[TOTAL_REWARD][0]/step
 
+                # ask the agent what action to take
                 on_step_result = agent_on_step(
                     session_id,
                     state,
-                    last_reward,
-                    last_action,
+                    app_state[LAST_REWARD],
+                    app_state[LAST_ACTION],
                     step,
                     agent_context)
-
-                # print("on_step_result " + repr(on_step_result))
-
                 if (app_state[STATUS][CODE] == ERROR):
                     break
 
-                # last_action = env.action_space.sample()
-                last_action = on_step_result[ACTION]
+                # extract the results and update state
+                app_state[LAST_ACTION] = on_step_result[ACTION]
                 agent_context = on_step_result[CONTEXT]
 
-                ob, last_reward, done, _ = env.step(last_action[0])
-                last_reward = (last_reward,)
+                # actually perform the action in the simulation
+                state, last_reward, done, _ = env.step(
+                    app_state[LAST_ACTION][0])
+
+                # update state from having performed the step
+                app_state[LAST_REWARD] = (last_reward,)
+
+                # calculate and store the acummulated reward for this episode
                 app_state[TOTAL_REWARD] = (app_state[TOTAL_REWARD][0] +
-                                           last_reward[0],)
+                                           app_state[LAST_REWARD][0],)
 
                 if done:
                     on_done_result = agent_on_done(
                         session_id,
-                        ob,
-                        last_reward,
-                        last_action,
+                        state,
+                        app_state[LAST_REWARD],
+                        app_state[LAST_REWARD],
                         step,
                         agent_context)
-                    print("- DONE!")
+                    print("[" + session_id + "] DONE: " + repr(on_done_result))
                     break
-
-                # print("- step = " + str(step) + ", reward = " +
-                #       str(last_reward) + ", ob = " + repr(ob))
-
-                # Note there's no env.render() here. But the environment still can open window and
-                # render if asked by env.monitor: it calls env.render('rgb_array') to record video.
-                # Video is not recorded every episode, see capped_cubic_video_schedule for details.
-
-                # render = env.render('rgb_array')
-                # print("- render " + repr(render))
 
         status = app_state[STATUS]
         if (status[CODE] != ERROR and status[CODE] != STOPPED):
             set_status(session_id, ENDED)
 
     except Exception as e:
-        print("run exception: " + repr(e))
+        print("[" + session_id + "] run exception: " + repr(e))
         set_status(session_id, ERROR, [str(e)])
 
     finally:
@@ -427,6 +424,7 @@ type Status {
 }
 
 type AgentStats {
+  score: Float!
   lastReward: [Float!]!
   lastAction: [Float!]!
   totalReward: [Float!]!
@@ -485,6 +483,7 @@ def resolve_observe(*_, sessionId):
         EPISODE: app_state[EPISODE],
         STEP: app_state[STEP],
         AGENT_STATS: ({
+            SCORE: app_state[SCORE],
             LAST_ACTION: app_state[LAST_ACTION],
             LAST_REWARD: app_state[LAST_REWARD],
             TOTAL_REWARD: app_state[TOTAL_REWARD],
